@@ -14,7 +14,7 @@ const devcadeS3 = require('./devcadeS3Actions');
  *  - false if validation failed or unzipping was unsuccessful
  */
 const unzipFile = async (file_uuid) => {
-    const fileContent = fs.readFileSync(`uploads/${file_uuid}.zip`);
+    const fileContent = fs.readFileSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}.zip`);
     const jszipInstance = new jszip();
     const result = await jszipInstance.loadAsync(fileContent);
 
@@ -40,32 +40,28 @@ const unzipFile = async (file_uuid) => {
     const keys = Object.keys(result.files);
 
     try {
-        if (fs.existsSync(`uploads/${file_uuid}`)) {
+        if (fs.existsSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`)) {
             // File has already been unzipped
             return false;
         }
         // create the file to place items in
-        fs.mkdirSync(`uploads/${file_uuid}`);
+        fs.mkdirSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`);
 
         // create files and put them into the directory
         for (let key of keys) {
             const item = result.files[key];
             if (item.dir) {
-                fs.mkdirSync(`uploads/${file_uuid}/${item.name}`);
+                fs.mkdirSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}/${item.name}`);
             } else {
                 const fileDirPath = item.name.replace('\\', '/').split('/').slice(0, -1).join('/');
                 const basename = path.basename(item.name);
                 if (!fs.existsSync(fileDirPath)) {
-                    fs.mkdirSync(`uploads/${file_uuid}/${fileDirPath}`, { recursive: true });
+                    fs.mkdirSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}/${fileDirPath}`, { recursive: true });
                 }
-                fs.writeFileSync(`uploads/${file_uuid}/${fileDirPath}/${basename}`, Buffer.from(await item.async('arraybuffer')));
+                fs.writeFileSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}/${fileDirPath}/${basename}`, Buffer.from(await item.async('arraybuffer')));
             }
         }
-        
         // return validated files
-        console.log("HERE")
-
-        console.log(data);
         return data;
     } catch (err) {
         // failed to create temporary files somewhere
@@ -152,7 +148,7 @@ const hashGameFiles = async (file_uuid, gameDirName) => {
     }
 
     try {
-        return await hashElement(`uploads/${file_uuid}/${gameDirName}`, options);
+        return await hashElement(`${devcadeS3.UPLOADS_DIR}/${file_uuid}/${gameDirName}`, options);
     } catch (err) {
         console.log(err);
         return false;
@@ -178,8 +174,8 @@ const zipGameFilesAndUpload = async (file_uuid, zipContentFiles) => {
         
         // zip game files
         await zipDirectory(
-            `uploads/${file_uuid}/${zipContentFiles.gameDir}`, 
-            `uploads/${file_uuid}/${file_uuid}.zip`
+            `${devcadeS3.UPLOADS_DIR}/${file_uuid}/${zipContentFiles.gameDir}`, 
+            `${devcadeS3.UPLOADS_DIR}/${file_uuid}/${file_uuid}.zip`
         );
 
         // get proper files for uploading to s3
@@ -310,8 +306,8 @@ const downloadAndZipMedias = async (file_uuid) => {
         
         // zip medias
         await zipDirectory(
-            `downloads/${file_uuid}/medias`, 
-            `downloads/${file_uuid}/medias.zip`
+            `${devcadeS3.DOWNLOADS_DIR}/${file_uuid}/medias`, 
+            `${devcadeS3.DOWNLOADS_DIR}/${file_uuid}/medias.zip`
         );
         return true;
     } catch (err) {
@@ -387,49 +383,49 @@ const downloadBanner = async (file_uuid) => {
 const deleteLocalFiles = async (file_uuid) => {
     try {
         // attempt to delete uploaded zip since it isn't needed anymore
-        if (fs.existsSync(`uploads/${file_uuid}.zip`)) {
-            fs.unlinkSync(`uploads/${file_uuid}.zip`);
-            console.log(`deleted: uploads/${file_uuid}.zip`);
+        if (fs.existsSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}.zip`)) {
+            fs.unlinkSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}.zip`);
+            console.log(`deleted: ${devcadeS3.UPLOADS_DIR}/${file_uuid}.zip`);
         }
         // attempt to delete unzipped files since they aren't needed anymore 
-        if (fs.existsSync(`uploads/${file_uuid}`)) {
+        if (fs.existsSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`)) {
             await (async () => {
-                fs.rmdir(`uploads/${file_uuid}`, { recursive: true, force: true }, async (err) => {
+                fs.rmdir(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`, { recursive: true, force: true }, async (err) => {
                     console.log("waiting for subdirectories to be deleted...")
                     
-                    if (fs.existsSync(`uploads/${file_uuid}`)) {
-                        while (fs.readdirSync(`uploads/${file_uuid}`).length !== 0) {
+                    if (fs.existsSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`)) {
+                        while (fs.readdirSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`).length !== 0) {
                             await devcadeS3.delay(250);
-                            if (!fs.existsSync(`uploads/${file_uuid}`)) {
+                            if (!fs.existsSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`)) {
                                 break;
                             }
                         }
                     }
-                    if (fs.existsSync(`uploads/${file_uuid}`)) {
-                        fs.rmdirSync(`uploads/${file_uuid}`);
+                    if (fs.existsSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`)) {
+                        fs.rmdirSync(`${devcadeS3.UPLOADS_DIR}/${file_uuid}`);
                     }
-                    console.log(`deleted: uploads/${file_uuid}`);
+                    console.log(`deleted: ${devcadeS3.UPLOADS_DIR}/${file_uuid}`);
                 });
             })();
         }
         // attempt to delete download files
-        if (fs.existsSync(`downloads/${file_uuid}`)) {
+        if (fs.existsSync(`${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`)) {
             await (async () => {
-                fs.rmdir(`downloads/${file_uuid}`, { recursive: true, force: true }, async (err) => {
+                fs.rmdir(`${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`, { recursive: true, force: true }, async (err) => {
                     console.log("waiting for subdirectories to be deleted...")
                     
-                    if (fs.existsSync(`downloads/${file_uuid}`)) {
-                        while (fs.readdirSync(`downloads/${file_uuid}`).length !== 0) {
+                    if (fs.existsSync(`${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`)) {
+                        while (fs.readdirSync(`${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`).length !== 0) {
                             await devcadeS3.delay(250);
-                            if (!fs.existsSync(`downloads/${file_uuid}`)) {
+                            if (!fs.existsSync(`${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`)) {
                                 break;
                             }
                         }
                     }
-                    if (fs.existsSync(`downloads/${file_uuid}`)) {
-                        fs.rmdirSync(`downloads/${file_uuid}`);
+                    if (fs.existsSync(`${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`)) {
+                        fs.rmdirSync(`${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`);
                     }
-                    console.log(`deleted: downloads/${file_uuid}`);
+                    console.log(`deleted: ${devcadeS3.DOWNLOADS_DIR}/${file_uuid}`);
                 });
             })();
         }
@@ -457,5 +453,7 @@ module.exports = {
     getBannerLocalPath,
     getIconLocalPath,
     downloadIcon,
-    downloadBanner
+    downloadBanner,
+    DOWNLOADS_DIR: devcadeS3.DOWNLOADS_DIR,
+    UPLOADS_DIR: devcadeS3.UPLOADS_DIR
 };

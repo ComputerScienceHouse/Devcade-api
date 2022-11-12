@@ -121,7 +121,7 @@ gamesRouter.get('/download/:gameId', async (req, res) => {
             return res.status(500).send("Failed to fetch game zip from s3 bucket");
         }
 
-        const zipPath = `downloads/${gameId}/${gameId}.zip`;
+        const zipPath = `${s3utils.DOWNLOADS_DIR}/${gameId}/${gameId}.zip`;
         const destFile = path.basename(zipPath);
         const stat = fs.statSync(zipPath);
 
@@ -149,7 +149,7 @@ gamesRouter.get('/download/medias/:gameId', async (req, res) => {
             return res.status(500).send("Failed to fetch game medias from s3 bucket");
         }
 
-        const zipPath = `downloads/${gameId}/medias.zip`;
+        const zipPath = `${s3utils.DOWNLOADS_DIR}/${gameId}/medias.zip`;
         const destFile = `${gameId}-${path.basename(zipPath)}`;
         const stat = fs.statSync(zipPath);
 

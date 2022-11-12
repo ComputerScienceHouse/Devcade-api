@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const Minio = require('minio');
-const DOWNLOADS_DIR = 'downloads';
-const UPLOADS_DIR = 'uploads';
+
+const DOWNLOADS_DIR = path.join(__dirname, '/../downloads');
+const UPLOADS_DIR = path.join(__dirname, '/../uploads');
 
 const minioClientConfig = {
     endPoint: config.S3_ENDPOINT,
@@ -57,6 +58,7 @@ const downloadGame = async (gameId) => {
 
         // create download directory if it does not exist
         const file_path = `${DOWNLOADS_DIR}/${gameId}`
+        console.log(file_path);
         if (!fs.existsSync(file_path)) {
             fs.mkdirSync(file_path, { recursive: true });
         }
@@ -64,6 +66,10 @@ const downloadGame = async (gameId) => {
         // Download the game zip
         const file_dest = `${file_path}/${gameId}.zip`;
         const key = `${gameId}/${gameId}.zip`;
+        console.log("dest")
+        console.log(file_dest);
+        console.log('key')
+        console.log(key)
             await s3.fGetObject(
                 config.S3_GAMES_BUCKET, 
                 key,
@@ -134,7 +140,7 @@ const waitForFile = async (gameId, localFileDir, gameFileType) => {
 }
 
 const waitForGame = async (gameId) => {
-    while (!fs.existsSync(`downloads/${gameId}/${gameId}.zip`)) {
+    while (!fs.existsSync(`${DOWNLOADS_DIR}/${gameId}/${gameId}.zip`)) {
         await delay(250);
         console.log("still waiting");
     }
@@ -236,8 +242,6 @@ const getGamesBucketObjects = async (gameId) => {
     return await getBucketObjects(config.S3_GAMES_BUCKET, gameId);
 }
 
-const testGameId = "66f3b024-92da-478e-8985-8c030de46a48";
-
 //uploadGameFile(testGameId, `${UPLOADS_DIR}/${testGameId}.zip`)
 //uploadGameFile(testGameId, `${UPLOADS_DIR}/icon.png`)
 //uploadGameFile(testGameId, `${UPLOADS_DIR}/banner.png`)
@@ -260,5 +264,7 @@ module.exports = {
     waitForBanner,
     delay,
     getBannerLocalPath,
-    getIconLocalPath
+    getIconLocalPath,
+    UPLOADS_DIR,
+    DOWNLOADS_DIR
 };
