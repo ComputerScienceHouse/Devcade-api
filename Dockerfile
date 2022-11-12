@@ -17,11 +17,10 @@ RUN mkdir ./downloads ./uploads
 COPY . .
 
 # Permissions
-RUN chmod -R 775 .
-RUN chown -R node: .
+RUN chmod -R 775 /usr/src/app && chown -R node:node /usr/src/app
 
 # Entrypoint
-USER node
+USER 1000
 EXPOSE 8080
 CMD ["npm", "start"]
 
