@@ -96,7 +96,7 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
                     .service(users::add_user)
                     .service(users::edit_user),
             )
-            .service(SwaggerUi::new("/docs/{_:.*}").url("/api-doc/openapi.json", openapi)),
+            .service(SwaggerUi::new("/docs/{_:.*}").url("/api/api-doc/openapi.json", openapi)),
     );
 }
 
