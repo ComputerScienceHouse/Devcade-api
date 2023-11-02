@@ -35,7 +35,7 @@ where
     fn new_transform(&self, service: S) -> Self::Future {
         future::ready(Ok(ApiKeyMiddleware {
             service,
-            log_only: false,
+            log_only: std::env::var("DISABLE_AUTHENTICATION").is_ok(),
         }))
     }
 }

@@ -1,4 +1,5 @@
 use crate::{
+    games::flatpak::FlatpakFile,
     models::{AppState, Game, GameWithTags},
     security::RequireApiKey,
 };
@@ -11,19 +12,12 @@ use actix_web::{
 use aws_sdk_s3::{types::ByteStream, Client};
 use chrono::prelude::*;
 use lazy_static::lazy_static;
+use memmap::Mmap;
 use serde::{Deserialize, Serialize};
-use sha1::{Digest, Sha1};
 use sqlx::{query, query_as};
-use std::{
-    env,
-    error::Error,
-    fmt,
-    fs::File,
-    io::{BufReader, Read},
-};
+use std::{env, error::Error, fmt};
 use utoipa::ToSchema;
 use uuid::Uuid;
-use zip::read::ZipArchive;
 
 lazy_static! {
     static ref GAMES_BUCKET: String = env::var("S3_GAMES_BUCKET").unwrap();
@@ -61,7 +55,6 @@ pub struct GameData {
 
 #[derive(Debug, MultipartForm)]
 pub struct GameUpload {
-    pub game: TempFile,
     pub banner: TempFile,
     pub icon: TempFile,
     pub title: Text<String>,
@@ -141,36 +134,52 @@ pub async fn get_all_games(state: Data<AppState>) -> impl Responder {
 async fn verify_and_upload_game(
     game: TempFile,
     s3: &Client,
-    uuid: Option<String>,
-) -> Result<(String, String), Box<dyn std::error::Error>> {
+    uuid: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let game_content_type = game
         .content_type
         .as_ref()
-        .ok_or("Could not determine file type")?
-        .clone();
-    if game_content_type != "application/zip" {
-        return Err(Box::new(GameError::new("Game provided is not a Zip")));
-    }
-    let uuid = uuid.unwrap_or(Uuid::new_v4().to_string());
+        .map(|mime| mime.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    if game_content_type != "application/vnd.flatpak"
+        && game_content_type != "application/octet-stream"
     {
-        let zip_file = File::open(game.file.path())?;
-        let mut zip_archive = ZipArchive::new(zip_file)?;
-        let publish = zip_archive
-            .by_name("publish/")
-            .map_err(|_| GameError::new("publish directory not found"))?;
-        if !publish.is_dir() {
-            return Err(Box::new(GameError::new("publish is not a directory")));
-        }
+        return Err(Box::new(GameError::new("Game provided is not a Flatpak!")));
     }
-    let hash = sha1sum(game.file.path().display().to_string())?;
+    // Afaik, this is only unsafe because outside processes (read: the OS) could
+    // write to our file unsynchronized
+    let file_memory_map = unsafe { Mmap::map(game.file.as_file()) }?;
+    let flatpak = FlatpakFile::load(file_memory_map)?;
+    let hash = flatpak.get_hash();
+    let flatpak_ref: String = flatpak.get_metadata_key("ref")?;
+    let components: Vec<&str> = flatpak_ref.split('/').collect();
+    if components[0] != "app" {
+        return Err(Box::new(GameError::new("Flatpak must be of type app")));
+    }
+    let app_id = format!("edu.rit.csh.devcade.game.id-{uuid}");
+    if components[1] != app_id {
+        return Err(Box::new(GameError::new(&format!(
+            "Flatpak app id {} must be {app_id}",
+            components[1]
+        ))));
+    }
+    if components[2] != "x86_64" {
+        return Err(Box::new(GameError::new(
+            "Flatpak architecture must be x86_64",
+        )));
+    }
+    if components[3] != "master" {
+        return Err(Box::new(GameError::new("Flatpak branch must be master")));
+    }
+
     let _ = s3
         .put_object()
-        .key(format!("{}/{}.zip", uuid, uuid))
+        .key(format!("{}/{}.flatpak", uuid, uuid))
         .body(ByteStream::from_path(game.file.path()).await?)
         .bucket(&GAMES_BUCKET.to_string())
         .send()
         .await?;
-    Ok((uuid, hash))
+    Ok(hash)
 }
 
 async fn verify_and_upload_image(
@@ -206,21 +215,19 @@ async fn verify_and_upload_image(
 }
 
 async fn verify_and_upload(
-    game: TempFile,
     banner: TempFile,
     icon: TempFile,
     s3: &Client,
-    uuid: Option<String>,
-) -> Result<(String, String), Box<dyn std::error::Error>> {
-    let (uuid, hash) = verify_and_upload_game(game, s3, uuid).await?;
-    verify_and_upload_image(banner, s3, ImageComponent::Banner, &uuid).await?;
-    verify_and_upload_image(icon, s3, ImageComponent::Icon, &uuid).await?;
-    Ok((uuid, hash))
+    uuid: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    verify_and_upload_image(banner, s3, ImageComponent::Banner, uuid).await?;
+    verify_and_upload_image(icon, s3, ImageComponent::Icon, uuid).await?;
+    Ok(())
 }
 
 #[utoipa::path(
     context_path = "/games",
-    request_body(content=GameUploadDoc, content_type="multipart/form-data", description="Multipart Form. Contains zip file of game, banner, icon, name, description, and author"),
+    request_body(content=GameUploadDoc, content_type="multipart/form-data", description="Multipart Form. Contains flatpak file of game, banner, icon, name, description, and author"),
     responses(
         (status = 201, description = "Created new game"),
         (status = 400, description = "Invalid format of file upload"),
@@ -236,15 +243,16 @@ pub async fn add_game(
     state: Data<AppState>,
     MultipartForm(form): MultipartForm<GameUpload>,
 ) -> impl Responder {
-    match verify_and_upload(form.game, form.banner, form.icon, &state.s3, None).await {
-        Ok((uuid, hash)) => {
+    let uuid = Uuid::new_v4().to_string();
+    match verify_and_upload(form.banner, form.icon, &state.s3, &uuid).await {
+        Ok(()) => {
             let date = Local::now().date_naive();
             match query("INSERT INTO game VALUES ($1, $2, $3, $4, $5, $6)")
                 .bind(&uuid)
                 .bind(form.author.clone())
                 .bind(date)
                 .bind(form.title.clone())
-                .bind(&hash)
+                .bind(&None::<String>)
                 .bind(form.description.clone())
                 .execute(&state.db)
                 .await
@@ -268,7 +276,7 @@ pub async fn add_game(
                         author: form.author.clone(),
                         upload_date: date,
                         name: form.title.clone(),
-                        hash,
+                        hash: None,
                         description: form.description.clone(),
                     })
                 }
@@ -348,12 +356,13 @@ pub async fn edit_game(
             {
                 Ok(_) => {
                     if let Err(e) = query("DELETE FROM game_tags WHERE game_id =  $1")
-                            .bind(&id)
-                            .execute(&mut transaction)
-                            .await {
-                                let _ = transaction.rollback().await;
-                                return HttpResponse::InternalServerError().body(e.to_string());
-                            };
+                        .bind(&id)
+                        .execute(&mut transaction)
+                        .await
+                    {
+                        let _ = transaction.rollback().await;
+                        return HttpResponse::InternalServerError().body(e.to_string());
+                    };
                     for tag_name in game_data.tags.clone() {
                         if let Err(e) = query("INSERT INTO game_tags VALUES ($1, $2)")
                             .bind(&id)
@@ -374,24 +383,24 @@ pub async fn edit_game(
                         hash: game.hash,
                         description: game_data.description.clone(),
                     })
-                },
+                }
                 Err(e) => {
                     let _ = transaction.rollback().await;
                     HttpResponse::InternalServerError().body(e.to_string())
-                },
+                }
             }
         }
         Err(_) => {
             let _ = transaction.rollback().await;
             HttpResponse::BadRequest().body("Game ID Does Not Exist")
-        },
+        }
     }
 }
 
 async fn delete_recursively(s3: &Client, id: &str) -> Result<(), Box<dyn std::error::Error>> {
     s3.delete_object()
         .bucket(&GAMES_BUCKET.to_string())
-        .key(format!("{}/{}.zip", id, id))
+        .key(format!("{}/{}.flatpak", id, id))
         .send()
         .await?;
     s3.delete_object()
@@ -458,7 +467,7 @@ pub async fn delete_game(state: Data<AppState>, path: Path<(String,)>) -> impl R
 #[utoipa::path(
     context_path = "/games",
     responses(
-        (status = 200, description = "Provide game source zip", content_type="application/zip"),
+        (status = 200, description = "Provide game source flatpak", content_type="application/vnd.flatpak"),
         (status = 400, description = "Missing game"),
         (status = 500, description = "Error Created by Query"),
     ),
@@ -481,7 +490,7 @@ pub async fn get_binary(state: Data<AppState>, path: Path<(String,)>) -> impl Re
         .s3
         .get_object()
         .bucket(&GAMES_BUCKET.to_string())
-        .key(format!("{}/{}.zip", id, id))
+        .key(format!("{}/{}.flatpak", id, id))
         .send()
         .await
     {
@@ -499,7 +508,7 @@ pub async fn get_binary(state: Data<AppState>, path: Path<(String,)>) -> impl Re
 
 #[utoipa::path(
     context_path = "/games",
-    request_body(content=FileUploadDoc, content_type="multipart/form-data", description="Zip of game publish folder"),
+    request_body(content=FileUploadDoc, content_type="multipart/form-data", description="Flatpak of game publish folder"),
     responses(
         (status = 200, description = "Updated Game Binary"),
         (status = 400, description = "Missing game"),
@@ -525,15 +534,25 @@ pub async fn update_binary(
         .fetch_one(&state.db)
         .await
     {
-        Ok(game) => match verify_and_upload_game(form.file, &state.s3, Some(id.clone())).await {
-            Ok((_, hash)) => HttpResponse::Ok().json(Game {
-                id,
-                author: game.author,
-                upload_date: game.upload_date,
-                name: game.name,
-                hash,
-                description: game.description,
-            }),
+        Ok(game) => match verify_and_upload_game(form.file, &state.s3, &id).await {
+            Ok(hash) => {
+                match query("UPDATE game SET hash = $1 WHERE id = $2")
+                    .bind(&hash)
+                    .bind(&id)
+                    .execute(&state.db)
+                    .await
+                {
+                    Ok(_) => HttpResponse::Ok().json(Game {
+                        id,
+                        author: game.author,
+                        upload_date: game.upload_date,
+                        name: game.name,
+                        hash: Some(hash),
+                        description: game.description,
+                    }),
+                    Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+                }
+            }
             Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
         },
         Err(_) => HttpResponse::BadRequest().body("Game ID Does Not Exist"),
@@ -698,22 +717,4 @@ pub async fn update_icon(
         }
         Err(_) => HttpResponse::BadRequest().body("Game ID Does Not Exist"),
     }
-}
-
-pub fn sha1sum(filepath: String) -> Result<String, Box<dyn std::error::Error>> {
-    let f = File::open(&filepath)?;
-    let mut reader = BufReader::new(f);
-    let mut buffer = Vec::new();
-
-    // Read file into vector.
-    reader.read_to_end(&mut buffer)?;
-
-    let mut hasher = Sha1::new();
-    hasher.update(&buffer);
-    let hexes = hasher.finalize();
-    let mut out = String::new();
-    for hex in hexes {
-        out.push_str(&format!("{:02x?}", hex));
-    }
-    Ok(out)
 }

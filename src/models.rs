@@ -17,8 +17,8 @@ pub struct Game {
     pub upload_date: NaiveDate,
     #[schema(example = "BrickBreaker")]
     pub name: String,
-    #[schema(example = "kisQdebh0jnh6rb+bqQeM1EAxrg=")]
-    pub hash: String,
+    #[schema(example = "6485ae710b078ffe0b97083b4cd1719920ed0d5ae5e77d1fbf6a7e3b88c35c78")]
+    pub hash: Option<String>,
     #[schema(example = "Break bricks, get points")]
     pub description: String,
 }
@@ -34,7 +34,7 @@ pub struct GameWithTags {
     #[schema(example = "SardineCanOpeningSimulatorTheGame")]
     pub name: String,
     #[schema(example = "kisQdebh0jnh6rb+bqQeM1EAxrg=")]
-    pub hash: String,
+    pub hash: Option<String>,
     #[schema(example = "Huh")]
     pub description: String,
     #[schema(
