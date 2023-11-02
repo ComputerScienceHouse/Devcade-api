@@ -494,14 +494,7 @@ pub async fn get_binary(state: Data<AppState>, path: Path<(String,)>) -> impl Re
         .send()
         .await
     {
-        Ok(objout) => {
-            let bytestream = objout.body.collect().await;
-            match bytestream {
-                Ok(bytes) => HttpResponse::Ok().body(bytes.into_bytes()),
-                Err(e) => HttpResponse::InternalServerError()
-                    .body(format!("Error getting object body: {}", e)),
-            }
-        }
+        Ok(objout) => HttpResponse::Ok().streaming(objout.body),
         Err(e) => HttpResponse::InternalServerError().body(format!("Error getting object: {}", e)),
     }
 }
