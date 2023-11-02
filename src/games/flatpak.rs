@@ -1,61 +1,10 @@
-use glib::variant::{DictEntry, FixedSizeVariantArray, FromVariant, Variant};
-use glib::{StaticVariantType, VariantDict, VariantTy};
+use glib::variant::{FromVariant, Variant};
+use glib::VariantTy;
 use lazy_static::lazy_static;
 use std::any::TypeId;
 use std::error::Error;
 use std::fmt::{self, Debug, Display};
 use std::marker::PhantomData;
-
-// /// The type of a commit object: `(a{sv}aya(say)sstayay)`
-// /// Ripped from: https://docs.rs/ostree/0.19.1/src/ostree/core.rs.html#5-15
-// type CommitVariantType = (
-//     VariantDict,
-//     Vec<u8>,
-//     Vec<(String, Vec<u8>)>,
-//     String,
-//     String,
-//     u64,
-//     Vec<u8>,
-//     Vec<u8>,
-// );
-
-// #[derive(glib::Variant)]
-// struct OstreeStaticDeltaMetaEntryFormat {
-//     version: u32,                                         // u
-//     checksum: FixedSizeVariantArray<Vec<u8>, u8>,         // ay
-//     size: u64,                                            // t
-//     uncompressed_size: u64,                               // t
-//     checksum_objects: FixedSizeVariantArray<Vec<u8>, u8>, // ay
-// }
-
-// #[derive(glib::Variant)]
-// struct OstreeStaticDeltaFallbackFormat {
-//     objtype: u8,                                  // y
-//     checksum: FixedSizeVariantArray<Vec<u8>, u8>, // ay
-//     compressed_size: u64,                         // t
-//     uncompressed_size: u64,                       // t
-// }
-
-// #[derive(glib::Variant)]
-// pub struct FlatpakFile {
-//     metadata: Vec<DictEntry<String, Variant>>,
-//     _unknown1: u64,
-//     _unknown2: FixedSizeVariantArray<Vec<u8>, u8>,
-//     checksum: FixedSizeVariantArray<Vec<u8>, u8>,
-//     ostree_commit_dummy: (VariantDict,),
-//     // ostree_commit: CommitVariantType,
-//     // _unknown3: FixedSizeVariantArray<Vec<u8>, u8>,
-//     // ostree_static_delta_meta_entries: Vec<OstreeStaticDeltaMetaEntryFormat>,
-//     // ostree_static_delta_fallbacks: Vec<OstreeStaticDeltaFallbackFormat>,
-// }
-
-// #[test]
-// fn test_flatpak_schema() {
-//     assert_eq!(
-//         FlatpakFile::static_variant_type().as_str(),
-//         "(a{sv}tayay(a{sv}aya(say)sstayay)aya(uayttay)a(yaytt))",
-//     );
-// }
 
 pub struct FlatpakFile(Variant);
 
