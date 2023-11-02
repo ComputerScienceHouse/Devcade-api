@@ -175,7 +175,7 @@ fn make_test_game(id_letter: &str, author: &str, hash: &str, date: NaiveDate, na
         author: author.to_string(),
         upload_date: date,
         name: name.to_string(),
-        hash: hash.to_string(),
+        hash: Some(hash.to_string()),
         description: format!("{} Description", name),
     }
 }

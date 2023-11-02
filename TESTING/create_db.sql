@@ -36,7 +36,7 @@ CREATE TABLE public.game (
     author character varying(32) NOT NULL,
     upload_date date NOT NULL,
     name character varying(128) NOT NULL,
-    hash character varying(255) NOT NULL,
+    hash character varying(255),
     description character varying(1500) NOT NULL
 );
 
