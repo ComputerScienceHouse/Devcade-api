@@ -1,8 +1,8 @@
-FROM rust:1.66-slim-buster
+FROM rust:1.70-slim-buster
 
 WORKDIR /app
 
-RUN apt-get update && apt-get -y install zip libssl-dev pkg-config
+RUN apt-get update && apt-get -y install libssl-dev pkg-config libglib2.0-dev
 
 RUN cargo init .
 
