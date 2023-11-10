@@ -5,7 +5,9 @@ use crate::{
     users::routes as users,
 };
 
+use actix_web::body::BoxBody;
 use actix_web::web::{self, scope, Data};
+use actix_web::HttpResponse;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::Endpoint;
 
@@ -17,53 +19,53 @@ use utoipa::{
 };
 use utoipa_swagger_ui::SwaggerUi;
 
-pub fn configure_app(cfg: &mut web::ServiceConfig) {
-    #[derive(OpenApi)]
-    #[openapi(
-        paths(
-            games::get_all_games,
-            games::get_game,
-            games::edit_game,
-            games::delete_game,
-            games::add_game,
-            games::get_binary,
-            games::update_binary,
-            games::get_banner,
-            games::update_banner,
-            games::get_icon,
-            games::update_icon,
-            tags::get_all_tags,
-            tags::get_tag,
-            tags::edit_tag,
-            tags::delete_tag,
-            tags::add_tag,
-            tags::get_tag_games,
-            users::get_user,
-            users::add_user,
-            users::edit_user,
-        ),
-        components(
-            schemas(GameData, Game, GameUploadDoc, FileUploadDoc, GameWithTags, Tag, User, UserType)
-        ),
-        tags(
-            (name = "DevcadeAPI", description = "")
-        ),
-        modifiers(&SecurityAddon)
-    )]
-    struct ApiDoc;
+#[derive(OpenApi)]
+#[openapi(
+    paths(
+        games::get_all_games,
+        games::get_game,
+        games::edit_game,
+        games::delete_game,
+        games::add_game,
+        games::get_binary,
+        games::update_binary,
+        games::get_banner,
+        games::update_banner,
+        games::get_icon,
+        games::update_icon,
+        tags::get_all_tags,
+        tags::get_tag,
+        tags::edit_tag,
+        tags::delete_tag,
+        tags::add_tag,
+        tags::get_tag_games,
+        users::get_user,
+        users::add_user,
+        users::edit_user,
+    ),
+    components(
+        schemas(GameData, Game, GameUploadDoc, FileUploadDoc, GameWithTags, Tag, User, UserType)
+    ),
+    tags(
+        (name = "DevcadeAPI", description = "")
+    ),
+    modifiers(&SecurityAddon)
+)]
+struct ApiDoc;
 
-    struct SecurityAddon;
+struct SecurityAddon;
 
-    impl Modify for SecurityAddon {
-        fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
-            let components = openapi.components.as_mut().unwrap(); // we can unwrap safely since there already is components registered.
-            components.add_security_scheme(
-                "api_key",
-                SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("frontend_api_key"))),
-            )
-        }
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        let components = openapi.components.as_mut().unwrap(); // we can unwrap safely since there already is components registered.
+        components.add_security_scheme(
+            "api_key",
+            SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::new("frontend_api_key"))),
+        )
     }
+}
 
+pub fn configure_app(cfg: &mut web::ServiceConfig) {
     let openapi = ApiDoc::openapi();
     cfg.service(
         scope("/api")
@@ -96,8 +98,14 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
                     .service(users::add_user)
                     .service(users::edit_user),
             )
-            .service(SwaggerUi::new("/docs/{_:.*}").url("/api-doc/openapi.json", openapi)),
+            .route("/openapi.json", web::get().to(open_api_spec))
+            .service(SwaggerUi::new("/docs/{_:.*}").url("/api/openapi.json", openapi)),
     );
+}
+
+pub async fn open_api_spec() -> HttpResponse<BoxBody> {
+    let openapi = ApiDoc::openapi();
+    HttpResponse::Ok().json(openapi)
 }
 
 pub async fn get_app_data() -> Data<AppState> {
