@@ -156,7 +156,7 @@ pub async fn get_list_hash(state: Data<AppState>) -> impl Responder {
     {
         Ok(hashes) => hashes
             .iter()
-            .map(|x| x.get::<String, &str>("name"))
+            .map(|x| x.get::<String, &str>("hash"))
             .collect(),
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
