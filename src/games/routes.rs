@@ -2,8 +2,6 @@ use crate::{
     models::{AppState, Game, GameWithTags},
     security::RequireApiKey,
 };
-use image::{load_from_memory, imageops, ImageBuffer};
-use bytes::Bytes;
 use actix_multipart::form::{tempfile::TempFile, text::Text, MultipartForm};
 use actix_web::{
     delete, get, post, put,
@@ -11,7 +9,9 @@ use actix_web::{
     HttpResponse, Responder,
 };
 use aws_sdk_s3::{types::ByteStream, Client};
+use bytes::Bytes;
 use chrono::prelude::*;
+use image::{imageops, load_from_memory, ImageBuffer};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
@@ -21,7 +21,7 @@ use std::{
     error::Error,
     fmt,
     fs::File,
-    io::{BufReader, Read, Cursor},
+    io::{BufReader, Cursor, Read},
 };
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -140,6 +140,42 @@ pub async fn get_all_games(state: Data<AppState>) -> impl Responder {
     }
 }
 
+#[utoipa::path(
+    context_path = "/games",
+    responses(
+        (status = 200, description = "Get a hash of all games", body = [GameWithTags]),
+        (status = 500, description = "Error Created by Query"),
+    )
+)]
+#[get("/hash")]
+pub async fn get_list_hash(state: Data<AppState>) -> impl Responder {
+    println!("chom");
+    let hashes: Vec<String> = match query::<Postgres>("select hash from game order by name asc")
+        .fetch_all(&state.db)
+        .await
+    {
+        Ok(hashes) => hashes
+            .iter()
+            .map(|x| x.get::<String, &str>("hash"))
+            .collect(),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    println!("chom");
+
+    let hash_string = hashes.join("");
+
+    let mut hasher = Sha1::new();
+    hasher.update(&hash_string);
+    let hexes = hasher.finalize();
+    let mut out = String::new();
+    for hex in hexes {
+        out.push_str(&format!("{:02x?}", hex));
+    }
+    println!("chom");
+
+    HttpResponse::Ok().json(hash_string)
+}
+
 async fn verify_and_upload_game(
     game: TempFile,
     s3: &Client,
@@ -194,7 +230,25 @@ async fn verify_and_upload_image(
     }
     let image_buffer = Vec::new();
     let mut cursor = Cursor::new(image_buffer);
-    imageops::resize(&load_from_memory(&ByteStream::from_path(image.file.path()).await?.collect().await?.into_bytes(),)?,match image_type {ImageComponent::Icon => 150, ImageComponent::Banner => 850,},match image_type {ImageComponent::Icon => 150, ImageComponent::Banner => 400,}, imageops::FilterType::Lanczos3,).write_to(&mut cursor, image::ImageFormat::Png)?;
+    imageops::resize(
+        &load_from_memory(
+            &ByteStream::from_path(image.file.path())
+                .await?
+                .collect()
+                .await?
+                .into_bytes(),
+        )?,
+        match image_type {
+            ImageComponent::Icon => 150,
+            ImageComponent::Banner => 850,
+        },
+        match image_type {
+            ImageComponent::Icon => 150,
+            ImageComponent::Banner => 400,
+        },
+        imageops::FilterType::Lanczos3,
+    )
+    .write_to(&mut cursor, image::ImageFormat::Png)?;
     let _ = s3
         .put_object()
         .key(format!(
@@ -203,26 +257,27 @@ async fn verify_and_upload_image(
             image_type.filename(),
             //image_content_type.subtype()
         ))
-        .body(
-            ByteStream::from(
-                Bytes::copy_from_slice(
-                    ImageBuffer::into_raw(
-                        imageops::resize(
-                            &load_from_memory(&ByteStream::from_path(image.file.path()).await?.collect().await?.into_bytes())?,
-                            match image_type {
-                                ImageComponent::Banner => 850,
-                                ImageComponent::Icon => 150,
-                            },
-                            match image_type {
-                                ImageComponent::Banner => 400,
-                                ImageComponent::Icon => 150,
-                            },
-                            imageops::FilterType::Lanczos3
-                        )
-                    ).as_slice()
-                )
-            )
-        )
+        .body(ByteStream::from(Bytes::copy_from_slice(
+            ImageBuffer::into_raw(imageops::resize(
+                &load_from_memory(
+                    &ByteStream::from_path(image.file.path())
+                        .await?
+                        .collect()
+                        .await?
+                        .into_bytes(),
+                )?,
+                match image_type {
+                    ImageComponent::Banner => 850,
+                    ImageComponent::Icon => 150,
+                },
+                match image_type {
+                    ImageComponent::Banner => 400,
+                    ImageComponent::Icon => 150,
+                },
+                imageops::FilterType::Lanczos3,
+            ))
+            .as_slice(),
+        )))
         .bucket(&GAMES_BUCKET.to_string())
         .send()
         .await?;
@@ -372,12 +427,13 @@ pub async fn edit_game(
             {
                 Ok(_) => {
                     if let Err(e) = query("DELETE FROM game_tags WHERE game_id =  $1")
-                            .bind(&id)
-                            .execute(&mut transaction)
-                            .await {
-                                let _ = transaction.rollback().await;
-                                return HttpResponse::InternalServerError().body(e.to_string());
-                            };
+                        .bind(&id)
+                        .execute(&mut transaction)
+                        .await
+                    {
+                        let _ = transaction.rollback().await;
+                        return HttpResponse::InternalServerError().body(e.to_string());
+                    };
                     for tag_name in game_data.tags.clone() {
                         if let Err(e) = query("INSERT INTO game_tags VALUES ($1, $2)")
                             .bind(&id)
@@ -398,17 +454,17 @@ pub async fn edit_game(
                         hash: game.hash,
                         description: game_data.description.clone(),
                     })
-                },
+                }
                 Err(e) => {
                     let _ = transaction.rollback().await;
                     HttpResponse::InternalServerError().body(e.to_string())
-                },
+                }
             }
         }
         Err(_) => {
             let _ = transaction.rollback().await;
             HttpResponse::BadRequest().body("Game ID Does Not Exist")
-        },
+        }
     }
 }
 
