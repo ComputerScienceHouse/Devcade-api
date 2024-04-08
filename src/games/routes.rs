@@ -149,7 +149,6 @@ pub async fn get_all_games(state: Data<AppState>) -> impl Responder {
 )]
 #[get("/hash")]
 pub async fn get_list_hash(state: Data<AppState>) -> impl Responder {
-    println!("chom");
     let hashes: Vec<String> = match query::<Postgres>("select hash from game order by name asc")
         .fetch_all(&state.db)
         .await
@@ -160,7 +159,6 @@ pub async fn get_list_hash(state: Data<AppState>) -> impl Responder {
             .collect(),
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
-    println!("chom");
 
     let hash_string = hashes.join("");
 
@@ -171,9 +169,8 @@ pub async fn get_list_hash(state: Data<AppState>) -> impl Responder {
     for hex in hexes {
         out.push_str(&format!("{:02x?}", hex));
     }
-    println!("chom");
 
-    HttpResponse::Ok().json(hash_string)
+    HttpResponse::Ok().json(out)
 }
 
 async fn verify_and_upload_game(
