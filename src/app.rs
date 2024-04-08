@@ -22,6 +22,7 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
     #[openapi(
         paths(
             games::get_all_games,
+            games::get_list_hash,
             games::get_game,
             games::edit_game,
             games::delete_game,
@@ -70,6 +71,7 @@ pub fn configure_app(cfg: &mut web::ServiceConfig) {
             .service(
                 scope("/games")
                     .service(games::get_all_games)
+                    .service(games::get_list_hash)
                     .service(games::get_game)
                     .service(games::edit_game)
                     .service(games::delete_game)
