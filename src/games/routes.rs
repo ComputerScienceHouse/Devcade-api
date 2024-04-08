@@ -15,7 +15,7 @@ use image::{imageops, load_from_memory, ImageBuffer};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
-use sqlx::{query, query_as};
+use sqlx::{query, query_as, Postgres, Row};
 use std::{
     env,
     error::Error,
